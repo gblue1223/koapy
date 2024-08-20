@@ -68,9 +68,14 @@ class KiwoomOpenApiPlusSendConditionRateLimiter(RateLimiter):
     def check_sleep_seconds(self, fn, *args, **kwargs):
         condition_name = None
         condition_index = None
-        if fn.__name__ == "SendCondition":
-            condition_name = kwargs.get("condition_name", args[1])
-            condition_index = kwargs.get("condition_index", args[2])
+        if callable(fn):
+            if fn.__name__ == "SendCondition":
+                condition_name = kwargs.get("condition_name", args[1])
+                condition_index = kwargs.get("condition_index", args[2])
+        else:
+            if fn == "SendCondition":
+                condition_name = kwargs.get("condition_name", args[1])
+                condition_index = kwargs.get("condition_index", args[2])
         with self._lock:
             sleep_seconds = self._comm_rate_limiter.check_sleep_seconds()
             if condition_name is not None and condition_index is not None:
@@ -80,21 +85,24 @@ class KiwoomOpenApiPlusSendConditionRateLimiter(RateLimiter):
                 sleep_seconds = max(
                     sleep_seconds, limiter_per_condition.check_sleep_seconds()
                 )
-            return sleep_seconds
+            return sleep_seconds if callable(fn) else 0
 
     def add_call_history(self, fn, *args, **kwargs):
-        condition_name = None
-        condition_index = None
-        if fn.__name__ == "SendCondition":
-            condition_name = kwargs.get("condition_name", args[1])
-            condition_index = kwargs.get("condition_index", args[2])
-        with self._lock:
-            self._comm_rate_limiter.add_call_history()
-            if condition_name is not None and condition_index is not None:
-                limiter_per_condition = self.get_limiter_per_condition(
-                    condition_name, condition_index
-                )
-                limiter_per_condition.add_call_history()
+        if callable(fn):
+            if fn.__name__ == "SendCondition":
+                condition_name = kwargs.get("condition_name", args[1])
+                condition_index = kwargs.get("condition_index", args[2])
+                with self._lock:
+                    limiter_per_condition = self.get_limiter_per_condition(
+                        condition_name, condition_index
+                    )
+                    limiter_per_condition.add_call_history()
+            else:
+                with self._lock:
+                    self._comm_rate_limiter.add_call_history()
+        else:
+            with self._lock:
+                self._comm_rate_limiter.add_call_history()
 
     def sleep_if_necessary(self, fn, *args, **kwargs):
         with self._lock:
